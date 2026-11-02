@@ -3,7 +3,20 @@
 # SPDX-License-Identifier: MIT
 """Register the demo with a running iya-sts. The metadata documents do the SAML work.
 
-This copy asks the C# saml2-sp command for keys, metadata, and a summary of the identity provider.
+This copy asks this library's `saml2-sp` command for keys, metadata, and a summary of the identity
+provider. The command is on PATH in the demo image, so run this script there (see README.md); the
+.NET SDK does not run on the host, and this script never builds anything.
+
+idpCa names the file (default demo/generated/idp-ca.pem) that holds iya-sts's TLS listener CA
+trust chain. Every run writes the whole chain there: what GET /tls/server-certificate answers (leaf,
+TLS issuing CA, intermediate, root), or the chain the TLS handshake presents when that path is
+missing. The demo Dockerfile copies that file into the image, so build the demo image after this
+script, and again after running it against a different iya-sts.
+
+A generated test-user password is never printed: it is written to demo/generated/<user>.password
+(mode 0600) and only that path is printed.
+
+This script imports only the standard library (and scripts/trust_chain.py beside it).
 """
 
 from __future__ import annotations
@@ -12,6 +25,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import ssl
 import subprocess
 import sys
@@ -19,6 +33,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from trust_chain import save_trust_chain  # noqa: E402
 
 LOOPBACK = {"localhost", "127.0.0.1", "::1"}
 
@@ -41,7 +58,8 @@ def usage() -> str:
                   and keep their paths (default: unset; $PUBLIC_URL). Without it, a loopback entityID
                   and ACS follow the running demo's PORT, then $PORT. A non-loopback URL is left as written.
   --test-user     The test user to create (default: saml-demo-user). Its password is
-                  $SAML_DEMO_USER_PASSWORD, or one is generated and printed once. With
+                  $SAML_DEMO_USER_PASSWORD, or one is generated and written to
+                  demo/generated/<user>.password (mode 0600); it is never printed. With
                   $SAML_DEMO_USER_PASSWORD set, an existing user's password is replaced.
   --no-test-user  Do not create a test user.
   --dry-run       Print what would be done, and send nothing.
@@ -207,9 +225,24 @@ def files_of(config_path: str) -> DemoFiles:
     )
 
 
+RUN_IN_IMAGE = (
+    '  docker build -t saml2-sp-csharp-demo .\n'
+    '  docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -e ADMIN_API_CLIENT_SECRET \\\n'
+    '    -v "$PWD/demo:/app/demo" saml2-sp-csharp-demo python3 scripts/configure_iya_sts.py --idp <iya-sts URL>'
+)
+
+
+def _saml2_sp() -> str:
+    """This library's CLI. It is on PATH in the demo image; the .NET SDK does not run on the host."""
+    binary = shutil.which("saml2-sp")
+    if not binary:
+        raise SystemExit("saml2-sp is not on PATH. Run this script inside the demo image:\n" + RUN_IN_IMAGE)
+    return binary
+
+
 def _cli(args: list[str], input_text: str | None = None) -> str:
     proc = subprocess.run(
-        ["dotnet", "run", "--project", "cli/IyaSec.Saml2Sp.Cli.csproj", "--nologo", "-v", "q", "--", *args],
+        [_saml2_sp(), *args],
         cwd=repo_root(), input=input_text, capture_output=True, text=True, check=False,
     )
     if proc.returncode != 0:
@@ -291,18 +324,43 @@ def container_port(cwd: str | None = None) -> str | None:
     return None
 
 
-def fetch_tls_root(origin: str) -> tuple[str, str, str]:
-    parsed = urllib.parse.urlsplit(origin)
-    host = parsed.hostname or ""
-    port = parsed.port or 443
-    proc = subprocess.run(
-        ["openssl", "s_client", "-showcerts", "-servername", host, "-connect", f"{host}:{port}"],
-        input=b"", capture_output=True, timeout=20, check=False,
-    )
-    pems = re.findall(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", proc.stdout.decode("utf-8", "replace"), re.S)
-    if not pems:
-        raise SystemExit(f"could not read a TLS certificate from {origin}")
-    return pems[-1] + "\n", "the last certificate openssl presented", ""
+def save_idp_ca(origin: str, dest: str) -> str:
+    """Write iya-sts's whole TLS listener CA trust chain to dest (idpCa) and return it as PEM."""
+    chain = save_trust_chain(origin, dest)
+    subject = chain["anchor"].subject.rfc4514_string().replace("\n", ", ")
+    print(f"Saved {origin}'s listener CA trust chain ({chain['count']} certificate(s)) to {dest}")
+    print(f"  trust anchor {subject}")
+    print(f"  sha256 {chain['fingerprint']}")
+    print("  Compare the anchor with the Root CA on iya-sts's Server configuration, PKI page.")
+    print("  The demo image carries this file from build time: rebuild it now.")
+    return chain["pem"]
+
+
+def generated_file(directory: str | Path, username: str) -> Path:
+    """The file a generated test-user password is written to: <directory>/<username>.password.
+
+    Computed apart from the password, by a function not named for it that never sees it, so the
+    path the script prints is not derived from the password.
+    """
+    if not username or "/" in username or "\\" in username or username in (".", ".."):
+        raise ValueError(f"{username!r} cannot name a file")
+    return Path(directory) / f"{username}.password"
+
+
+def write_private(path: str | Path, text: str) -> None:
+    """Write text to path, readable and writable by its owner only (0600).
+
+    The file is created 0600, so it is never readable by anyone else, not even for a moment;
+    an existing file is narrowed to 0600 before it is rewritten. A generated password goes here
+    and is never printed: a password does not belong in a log. Nothing is returned, so nothing
+    printed comes from here.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as out:
+        os.fchmod(out.fileno(), 0o600)
+        out.write(text + "\n")
 
 
 def _request(url: str, method: str, headers: dict, body: bytes | None, ca: str | None):
@@ -371,8 +429,8 @@ def main(argv: list[str] | None = None) -> None:
         xml = "<the SP metadata from the configuration>" if Path(files.cert).exists() else "<the SP metadata, once the key pair exists>"
         if not Path(files.key).exists():
             print(f"# would generate the key pair {files.key}, {files.cert}")
-        if files.idp_ca and not Path(files.idp_ca).exists():
-            print(f"# would save {origin}'s TLS root to {files.idp_ca}")
+        if files.idp_ca:
+            print(f"# would save {origin}'s listener CA trust chain to {files.idp_ca}")
         print(f"# would write {files.sp_metadata}")
         for call in plan_for(files, base, args.test_user, xml):
             body = f"\n{json.dumps(call['body'], indent=2)}" if call.get("body") is not None else ""
@@ -383,14 +441,7 @@ def main(argv: list[str] | None = None) -> None:
         _generate_keys(args.config)
     ca = None
     if files.idp_ca:
-        if not Path(files.idp_ca).exists():
-            pem, subject, fingerprint = fetch_tls_root(origin)
-            Path(files.idp_ca).parent.mkdir(parents=True, exist_ok=True)
-            Path(files.idp_ca).write_text(pem, encoding="utf-8")
-            print(f"Saved {origin}'s TLS root to {files.idp_ca} (trusted on first use):")
-            print(f"  {subject}\n  sha256 {fingerprint}")
-            print("  Compare it with the Root CA on iya-sts's Server configuration → PKI page.")
-        ca = Path(files.idp_ca).read_text(encoding="utf-8")
+        ca = save_idp_ca(origin, files.idp_ca)
     sp_metadata_xml = metadata_for(args.config, files.entity_id, files.acs_url)
     Path(files.sp_metadata).parent.mkdir(parents=True, exist_ok=True)
     Path(files.sp_metadata).write_text(sp_metadata_xml, encoding="utf-8")
@@ -477,13 +528,18 @@ def main(argv: list[str] | None = None) -> None:
                 raise SystemExit(f"creating {args.test_user} was refused: {json.dumps(made['body'])[:300]}")
             print(f"Created user {args.test_user}.")
             if made["body"].get("password"):
-                print(f"Generated password for {args.test_user} (shown once): {made['body']['password']}")
-    print("Done. Start the demo with: docker compose up --build")
+                # Never printed: a password does not belong in a log. It goes to a file only
+                # its owner can read, beside the key pair (demo/generated, which never enters
+                # an image: .dockerignore admits only idp-ca.pem from it).
+                saved = generated_file(Path(files.key).parent, args.test_user)
+                write_private(saved, made["body"]["password"])
+                print(f"Generated a password for {args.test_user}; it is in {saved} (readable by you only).")
+    print("Done. Build the demo image (it carries the idpCa chain) and start it: docker compose up --build")
 
 
 def _generate_keys(config_path: str) -> None:
     proc = subprocess.run(
-        ["go", "run", "./cmd/saml2-sp", "generate-keys", "--config", config_path],
+        [_saml2_sp(), "generate-keys", "--config", config_path],
         cwd=repo_root(), check=False,
     )
     if proc.returncode != 0:
