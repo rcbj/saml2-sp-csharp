@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: MIT
 
+using System.Net;
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
@@ -27,9 +28,30 @@ static class HttpSend
 
     internal static Answer Send(string rawUrl, string method, IReadOnlyDictionary<string, string> headers, string body, TlsOptions? tls, string code)
     {
+        // A URL with whitespace or a control character is refused before any
+        // parser reads it (Uri trims and escapes some of them), so two parsers
+        // cannot disagree about its host. The message does not repeat the URL,
+        // which may carry a secret.
+        foreach (var c in rawUrl)
+            if (char.IsWhiteSpace(c) || char.IsControl(c))
+                throw new SamlException(code, "a URL containing whitespace or a control character is refused");
         if (!(rawUrl.StartsWith("https://", StringComparison.Ordinal) || rawUrl.StartsWith("http://", StringComparison.Ordinal)))
             throw new SamlException(code, rawUrl + " is not an http(s) URL");
+        // Every fetch this library makes goes through here: the identity
+        // provider's metadata (its signing keys), the ArtifactResolve (the
+        // signed request out, the assertion back) and the Shared Signals
+        // transmitter (SETs, its JWKS and the bearer token). None of them may
+        // travel in the clear off this machine, so plain http is refused
+        // before any DNS lookup or connection unless the host is loopback.
+        var plain = rawUrl.StartsWith("http://", StringComparison.Ordinal);
+        if (plain) RefusePlainHttpOffLoopback(rawUrl, code);
         using var handler = new HttpClientHandler { SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13 };
+        // Redirects to plain http are never followed. .NET never follows an
+        // https URL to plain http (its 3xx is the answer), and a plain (so
+        // loopback) URL is not followed at all, so a redirect cannot carry the
+        // request off this machine in the clear. None of these protocols needs
+        // a redirect from a loopback http endpoint.
+        if (plain) handler.AllowAutoRedirect = false;
         if (rawUrl.StartsWith("https://", StringComparison.Ordinal) && tls != null && tls.Ca.Length > 0)
         {
             X509Certificate2Collection ca;
@@ -78,6 +100,36 @@ static class HttpSend
             return new Answer { Status = (int)response.StatusCode, ContentType = type, Body = System.Text.Encoding.UTF8.GetString(payload) };
         }
     }
+    // Throws unless a plain http URL names a loopback host: 127.0.0.0/8, ::1
+    // or the name localhost. Userinfo is never loopback, so
+    // "http://localhost:80@host/" cannot pass as localhost. The message names
+    // the scheme and host[:port] only: never userinfo, path or query.
+    internal static void RefusePlainHttpOffLoopback(string rawUrl, string code)
+    {
+        if (!Uri.TryCreate(rawUrl, UriKind.Absolute, out var uri))
+            throw new SamlException(code, "an http:// URL that cannot be parsed is refused");
+        var authority = rawUrl[7..];
+        var end = authority.IndexOfAny(new[] { '/', '?', '#' });
+        if (end >= 0) authority = authority[..end];
+        if (!authority.Contains('@') && uri.UserInfo.Length == 0 && IsLoopbackHost(uri)) return;
+        throw new SamlException(code, "http://" + uri.Authority + " is refused: plain http is allowed only to a loopback host (127.0.0.0/8, ::1, localhost); use https");
+    }
+
+    internal static bool IsLoopbackHost(Uri uri)
+    {
+        switch (uri.HostNameType)
+        {
+            case UriHostNameType.Dns:
+                return string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
+            case UriHostNameType.IPv4:
+                return IPAddress.TryParse(uri.Host, out var v4) && v4.GetAddressBytes()[0] == 127;
+            case UriHostNameType.IPv6:
+                return IPAddress.TryParse(uri.Host.Trim('[', ']'), out var v6) && v6.Equals(IPAddress.IPv6Loopback);
+            default:
+                return false;
+        }
+    }
+
     // tls.Ca may be one certificate or a whole trust chain: iya-sts publishes its
     // listener chain (leaf, TLS issuing CA, intermediate, root) and the setup
     // script saves all of it. Every PEM block is read (CreateFromPem reads only

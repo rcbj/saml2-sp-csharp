@@ -1,6 +1,6 @@
 # saml2-sp
 
-C# service provider for SAML 2.0 Web Browser SSO, plus a Shared Signals poll receiver. Version 0.1.2. MIT. `develop` and `main` are one commit. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
+C# service provider for SAML 2.0 Web Browser SSO, plus a Shared Signals poll receiver. Version 0.1.3. MIT. `develop` and `main` are one commit. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
 
 ## Usage
 
@@ -23,6 +23,10 @@ Signatures and decryption are real. The stub identity provider signs with this p
 ### idpCa: the iya-sts TLS listener CA trust chain
 
 `idpCa` (demo: `generated/idp-ca.pem`, relative to `demo/`) is the whole chain, not one certificate. `scripts/configure_iya_sts.py` writes it on every run through `save_trust_chain()` in `scripts/trust_chain.py` (`GET /tls/server-certificate`, else the handshake chain; `openssl` reads the names) and prints the path, the anchor's subject and SHA-256. The Dockerfile copies `demo/` after the publish step and `.dockerignore` admits only `demo/generated/idp-ca.pem`, so the demo image carries the chain from build time and a build without it still succeeds. Rebuild after re-running the install script against a different iya-sts. The install script never prints a generated password: `demo/generated/<user>.password`, mode 0600.
+
+### Plain http (#19)
+
+`HttpSend.Send` is the one place every fetch goes through (metadata URL, `ArtifactResolve`, SSF configuration, JWKS, stream and poll). `RefusePlainHttpOffLoopback` refuses plain `http://` to a host that is not loopback (`127.0.0.0/8`, `::1`, `localhost`) before the handler is built, naming only `http://host[:port]` under the fetch's own code; userinfo is never loopback. A plain (so loopback) URL gets `AllowAutoRedirect = false`, so a redirect cannot take it off the machine in the clear; .NET already never follows https to http. Redirects are refused rather than followed manually because none of these protocols needs one from a loopback http endpoint. Before any of that, `Send` refuses a URL (https too) with whitespace or a control character, without repeating it (`Uri` would trim or escape some of them). No opt-out. `PlainHttpTests` covers each fetch on `http://example.com` and on `http://0.0.0.0:<port>` (which reaches a 127.0.0.1 listener on Linux, so a zero accept count proves no connection), userinfo, loopback still working, redirects (to `0.0.0.0`, and from loopback http and from https to `http://example.com`), whitespace and control characters, and https to a closed port failing as a connection error.
 
 ### Live sign-in and nightly
 
