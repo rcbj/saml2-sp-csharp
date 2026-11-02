@@ -10,7 +10,19 @@
     <Version>0.1.0</Version>
     <Description>SAML 2.0 service provider</Description>
     <Authors>Iya CyberSecurity Solutions, LLC</Authors>
+    <IsPackable>true</IsPackable>
+    <Copyright>2026 Iya CyberSecurity Solutions, LLC</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/rcbj/saml2-sp-csharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/rcbj/saml2-sp-csharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>saml;saml2;caep;risc;ssf</PackageTags>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
