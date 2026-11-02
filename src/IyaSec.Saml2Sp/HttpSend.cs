@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 using System.Net.Security;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace IyaSec.Saml;
@@ -31,18 +32,11 @@ static class HttpSend
         using var handler = new HttpClientHandler { SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13 };
         if (rawUrl.StartsWith("https://", StringComparison.Ordinal) && tls != null && tls.Ca.Length > 0)
         {
-            X509Certificate2 ca;
-            try { ca = X509Certificate2.CreateFromPem(tls.Ca); }
+            X509Certificate2Collection ca;
+            try { ca = TrustStore(tls.Ca); }
             catch { throw new SamlException(code, rawUrl + ": the CA certificate cannot be read"); }
-            handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
-            {
-                if (cert == null) return false;
-                using var chain = new X509Chain();
-                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
-                chain.ChainPolicy.CustomTrustStore.Add(ca);
-                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-                return chain.Build(new X509Certificate2(cert));
-            };
+            var host = HostOf(rawUrl);
+            handler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) => Accept(cert, errors, ca, host);
         }
         if (tls != null && tls.Cert.Length > 0 && tls.Key.Length > 0)
         {
@@ -83,5 +77,59 @@ static class HttpSend
             var type = response.Content.Headers.ContentType?.ToString() ?? "";
             return new Answer { Status = (int)response.StatusCode, ContentType = type, Body = System.Text.Encoding.UTF8.GetString(payload) };
         }
+    }
+    // tls.Ca may be one certificate or a whole trust chain: iya-sts publishes its
+    // listener chain (leaf, TLS issuing CA, intermediate, root) and the setup
+    // script saves all of it. Every PEM block is read (CreateFromPem reads only
+    // the first, the leaf). The self-signed ones are the trust anchors and the
+    // rest are intermediates the chain may be built through. A file with no
+    // self-signed certificate keeps the old meaning: every certificate in it is
+    // an anchor.
+    internal static X509Certificate2Collection TrustStore(string pem)
+    {
+        var all = new X509Certificate2Collection();
+        all.ImportFromPem(pem);
+        if (all.Count == 0) throw new CryptographicException("no certificate");
+        return all;
+    }
+
+    static bool SelfSigned(X509Certificate2 cert) => cert.SubjectName.RawData.AsSpan().SequenceEqual(cert.IssuerName.RawData);
+
+    // The callback replaces the platform's whole decision, the name check
+    // included, so it makes that check itself: a certificate that chains to the
+    // configured anchors but names another host is refused. An IP literal must
+    // match an IP address SAN.
+    internal static bool Accept(X509Certificate? cert, SslPolicyErrors errors, X509Certificate2Collection ca, string host)
+    {
+        if (cert == null) return false;
+        if ((errors & SslPolicyErrors.RemoteCertificateNameMismatch) != 0) return false;
+        if ((errors & SslPolicyErrors.RemoteCertificateNotAvailable) != 0) return false;
+        using var leaf = new X509Certificate2(cert);
+        if (!NameMatches(leaf, host)) return false;
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        var anchors = ca.Where(SelfSigned).ToList();
+        if (anchors.Count == 0) anchors = ca.ToList();
+        foreach (var item in ca)
+        {
+            if (anchors.Contains(item)) chain.ChainPolicy.CustomTrustStore.Add(item);
+            else chain.ChainPolicy.ExtraStore.Add(item);
+        }
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        return chain.Build(leaf);
+    }
+
+    internal static string HostOf(string url)
+    {
+        var host = new Uri(url).IdnHost;
+        if (host.StartsWith('[') && host.EndsWith(']')) host = host[1..^1];
+        return host;
+    }
+
+    internal static bool NameMatches(X509Certificate2 leaf, string host)
+    {
+        if (string.IsNullOrEmpty(host)) return false;
+        try { return leaf.MatchesHostname(host, allowWildcards: true, allowCommonName: false); }
+        catch { return false; }
     }
 }

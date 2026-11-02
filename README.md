@@ -2,7 +2,7 @@
 
 Server-side SAML 2.0 service provider for C#. It sends a signed `AuthnRequest` on HTTP-Redirect or HTTP-POST, accepts a `Response` on HTTP-POST, HTTP-Redirect, or HTTP-Artifact, verifies XML signatures, decrypts encrypted assertions, and can poll a Shared Signals transmitter for CAEP and RISC events.
 
-Version 0.1.1. License: MIT. `develop` and `main` are one commit. Package id: `IyaSec.Saml2Sp`. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
+Version 0.1.2. License: MIT. `develop` and `main` are one commit. Package id: `IyaSec.Saml2Sp`. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
 
 ## Usage
 
@@ -13,6 +13,8 @@ var who = sp.Acs(method, rawUrl, body, new[] { request.Id });
 ```
 
 The package is `IyaSec.Saml2Sp` and the namespace is `IyaSec.Saml`. `saml.json` uses the same keys as the Python service provider: `entityId`, `acsUrl`, `privateKey`, `certificate`, `idpMetadata`, and the optional `requestBinding`, `responseBinding`, `idpCa`, `idpEntityId`, `nameIdFormat`, `clockSkewSeconds`, `wantAssertionsSigned`, `wantAssertionsEncrypted`, `allowUnsolicited`, and `signals`. A value may be PEM text, a file path, or an `env:` / `file:` placeholder. `signals` omitted or `true` leaves the Shared Signals receiver available and is omitted from the resolved configuration. `false` turns it off, does not require transmitter metadata, and is stored as `signals: false`. Any other value is a configuration error: `signals must be true or false`. SAML does not send OAuth scopes, so the flag does not change the `AuthnRequest`.
+
+`idpCa` is the iya-sts TLS listener CA trust chain for the HTTPS fetches (metadata, artifact resolution, the Shared Signals receiver). Every certificate in it is read: the self-signed ones are the trust anchors and the rest are intermediates the server's chain may be built through; a file with no self-signed certificate trusts every certificate in it. The server's certificate must also name the host in the URL: a DNS name must match a DNS SAN and an IP literal such as `127.0.0.1` an IP address SAN. A certificate that chains to the file but names another host is refused.
 
 `Login` returns a redirect URL or `PostFormHtml` fields. `Acs` accepts a POST body as a string or a map. Artifact resolution is a signed SOAP `ArtifactResolve`. HTTP-Redirect query signatures use RSA-SHA256 (`http://www.w3.org/2001/04/xmldsig-more#rsa-sha256`). Success is `urn:oasis:names:tc:SAML:2.0:status:Success`.
 

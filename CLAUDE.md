@@ -1,6 +1,6 @@
 # saml2-sp
 
-C# service provider for SAML 2.0 Web Browser SSO, plus a Shared Signals poll receiver. Version 0.1.1. MIT. `develop` and `main` are one commit. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
+C# service provider for SAML 2.0 Web Browser SSO, plus a Shared Signals poll receiver. Version 0.1.2. MIT. `develop` and `main` are one commit. A pull request merged into `main` publishes the package to nuget.org after the test workflow succeeds on that commit. A direct push does not. The key comes from nuget.org Trusted Publishing (`NuGet/login` trades the workflow's GitHub OIDC token for a one-hour API key); the `NUGET_USER` repository secret is the nuget.org profile name that owns the policy for this repository and `publish.yml`. A version already on nuget.org stays there; the next release is a new `Version` in the library's `.csproj`.
 
 ## Usage
 
@@ -18,7 +18,7 @@ docker build --target test .
 
 The `test` stage runs `dotnet test --nologo` in `mcr.microsoft.com/dotnet/sdk:8.0`. GitHub Actions uses that command. Do not run the .NET SDK on the host. The demo image does not run the suite.
 
-Signatures and decryption are real. The stub identity provider signs with this package's exclusive canonicalization and is created inside the tests. No live iya-sts.
+Signatures and decryption are real. The stub identity provider signs with this package's exclusive canonicalization and is created inside the tests. No live iya-sts. `TlsTrustTests` runs a leaf-only HTTPS listener: `idpCa` is read whole (`HttpSend.TrustStore`; `CreateFromPem` read only the leaf), and `HttpSend.Accept` refuses a certificate that chains to it but names another host (the custom callback replaces the platform's name check; an IP literal needs an IP SAN).
 
 ## Layout
 
