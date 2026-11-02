@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>IyaSec.Saml</RootNamespace>
+    <AssemblyName>IyaSec.Saml2Sp</AssemblyName>
+    <PackageId>IyaSec.Saml2Sp</PackageId>
+    <Version>0.1.0</Version>
+    <Description>SAML 2.0 service provider</Description>
+    <Authors>Iya CyberSecurity Solutions, LLC</Authors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <InternalsVisibleTo Include="IyaSec.Saml2Sp.Tests" />
+    <InternalsVisibleTo Include="IyaSec.Saml2Sp.Demo" />
+  </ItemGroup>
+
+</Project>
