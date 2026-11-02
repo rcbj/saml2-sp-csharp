@@ -28,6 +28,13 @@ static class HttpSend
 
     internal static Answer Send(string rawUrl, string method, IReadOnlyDictionary<string, string> headers, string body, TlsOptions? tls, string code)
     {
+        // A URL with whitespace or a control character is refused before any
+        // parser reads it (Uri trims and escapes some of them), so two parsers
+        // cannot disagree about its host. The message does not repeat the URL,
+        // which may carry a secret.
+        foreach (var c in rawUrl)
+            if (char.IsWhiteSpace(c) || char.IsControl(c))
+                throw new SamlException(code, "a URL containing whitespace or a control character is refused");
         if (!(rawUrl.StartsWith("https://", StringComparison.Ordinal) || rawUrl.StartsWith("http://", StringComparison.Ordinal)))
             throw new SamlException(code, rawUrl + " is not an http(s) URL");
         // Every fetch this library makes goes through here: the identity
@@ -39,9 +46,11 @@ static class HttpSend
         var plain = rawUrl.StartsWith("http://", StringComparison.Ordinal);
         if (plain) RefusePlainHttpOffLoopback(rawUrl, code);
         using var handler = new HttpClientHandler { SslProtocols = System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13 };
-        // .NET never follows an https URL to plain http. A plain (so loopback)
-        // URL is not followed at all, so a redirect cannot carry the request
-        // off this machine in the clear; its 3xx is the answer.
+        // Redirects to plain http are never followed. .NET never follows an
+        // https URL to plain http (its 3xx is the answer), and a plain (so
+        // loopback) URL is not followed at all, so a redirect cannot carry the
+        // request off this machine in the clear. None of these protocols needs
+        // a redirect from a loopback http endpoint.
         if (plain) handler.AllowAutoRedirect = false;
         if (rawUrl.StartsWith("https://", StringComparison.Ordinal) && tls != null && tls.Ca.Length > 0)
         {
