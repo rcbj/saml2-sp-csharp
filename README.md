@@ -16,9 +16,16 @@ The package is `IyaSec.Saml2Sp` and the namespace is `IyaSec.Saml`. `saml.json` 
 
 `Login` returns a redirect URL or `PostFormHtml` fields. `Acs` accepts a POST body as a string or a map. Artifact resolution is a signed SOAP `ArtifactResolve`. HTTP-Redirect query signatures use RSA-SHA256 (`http://www.w3.org/2001/04/xmldsig-more#rsa-sha256`). Success is `urn:oasis:names:tc:SAML:2.0:status:Success`.
 
-```bash
-dotnet run --project cli/IyaSec.Saml2Sp.Cli.csproj -- generate-keys --config demo/saml.json
-dotnet run --project cli/IyaSec.Saml2Sp.Cli.csproj -- metadata --config demo/saml.json
+```sh
+docker compose build
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/demo:/app/demo" \
+  saml2-sp-csharp-demo \
+  saml2-sp generate-keys --config demo/saml.json
+docker run --rm --user "$(id -u):$(id -g)" \
+  -v "$PWD/demo:/app/demo" \
+  saml2-sp-csharp-demo \
+  saml2-sp metadata --config demo/saml.json
 ```
 
 ## Shared Signals
@@ -39,13 +46,15 @@ The receiver discovers the transmitter, keeps one poll stream (`urn:ietf:rfc:893
 ## Tests
 
 ```bash
-dotnet test
+docker build --target test .
 ```
+
+The suite runs in a container.
 
 Signatures and decryption are real (`System.Security.Cryptography.Xml` exclusive canonicalization, RSA, and AES-GCM). The stub identity provider is in the test project. No live iya-sts. Keys are generated in the test.
 
 ## Demo
 
-`dotnet run --project demo/IyaSec.Saml2Sp.Demo`. `GET /healthz` is `200` with body `ok` and does not dial an identity provider. Pages: sign-in, `/login` (redirect or POST form), `/saml/acs`, and logout. Loopback entityID and assertion-consumer URLs follow `PORT` (default 3000). Other hosts stay as written. `PUBLIC_URL` or `--public-url` replaces the origin and keeps the path. The default `http://localhost:3000` is not an explicit public URL. `demo/saml.json` uses `file:` placeholders and omits `signals`. Do not commit `demo/generated/`.
+`docker compose up --build`. `GET /healthz` is `200` with body `ok` and does not dial an identity provider. Pages: sign-in, `/login` (redirect or POST form), `/saml/acs`, and logout. Loopback entityID and assertion-consumer URLs follow `PORT` (default 3000). Other hosts stay as written. `PUBLIC_URL` or `--public-url` replaces the origin and keeps the path. The default `http://localhost:3000` is not an explicit public URL. `demo/saml.json` uses `file:` placeholders and omits `signals`. Do not commit `demo/generated/`.
 
 `scripts/configure_iya_sts.py` is standard-library Python. It calls `dotnet run --project cli/IyaSec.Saml2Sp.Cli.csproj` for keys, metadata, and the identity-provider summary. The container `PORT` wins over the shell `PORT`.

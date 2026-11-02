@@ -1,6 +1,17 @@
 # syntax=docker/dockerfile:1
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 # SPDX-License-Identifier: MIT
+# `docker build --target test` runs the suite in this image.
+# The demo image below does not run it.
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS test
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
+ENV DOTNET_NOLOGO=1
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY . .
+RUN dotnet test --nologo
+
 FROM mcr.microsoft.com/dotnet/sdk:8.0
 WORKDIR /app
 COPY . .
