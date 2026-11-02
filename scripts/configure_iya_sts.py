@@ -310,6 +310,7 @@ def _request(url: str, method: str, headers: dict, body: bytes | None, ca: str |
     context = None
     if url.startswith("https://"):
         context = ssl.create_default_context()
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         if ca:
             context.load_verify_locations(cadata=ca)
     try:
