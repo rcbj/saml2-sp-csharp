@@ -320,8 +320,10 @@ public class TlsTrustTests
             var (code, stdout) = Python("""
             import sys
             sys.path.insert(0, sys.argv[1])
-            from configure_iya_sts import save_password
-            print("saved " + str(save_password(sys.argv[2], "saml-demo-user", "s3cret-Generated")))
+            from configure_iya_sts import generated_file, write_private
+            saved = generated_file(sys.argv[2], "saml-demo-user")
+            write_private(saved, "s3cret-Generated")
+            print("saved " + str(saved))
             """, Path.Combine(RepoRoot(), "scripts"), dir.FullName);
             Assert.True(code == 0, stdout);
             Assert.DoesNotContain("s3cret-Generated", stdout);
@@ -329,6 +331,8 @@ public class TlsTrustTests
             Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(stale));
             var source = File.ReadAllText(Path.Combine(RepoRoot(), "scripts", "configure_iya_sts.py"));
             Assert.DoesNotContain("(shown once)", source);
+            Assert.DoesNotContain("save_password", source);
+            Assert.Contains("saved " + stale, stdout);
         }
         finally { dir.Delete(true); }
     }
