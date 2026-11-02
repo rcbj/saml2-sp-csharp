@@ -26,6 +26,8 @@ var spReady = false;
 var spGate = new object();
 var sessions = new Dictionary<string, Held>();
 var sessionsGate = new object();
+// What GET /live-status reports: the accepted Shared Signals events (type and jti).
+var events = new List<(string Type, string Jti)>();
 
 try
 {
@@ -239,6 +241,7 @@ void StartReceiver(ServiceProvider sp)
                 return null;
             },
         });
+        built.On("*", Remember);
     }
     catch (Exception ex)
     {
@@ -263,12 +266,58 @@ void StartReceiver(ServiceProvider sp)
     });
 }
 
+// Records an accepted Shared Signals event for GET /live-status. iya-sts main may set
+// the assertion's SessionIndex to the assertion id, while the CAEP session-revoked
+// subject names the sign-on session, so the index finds nobody and OnEndSessions is
+// not asked to end this login. Then this demo ends its one local session and
+// untracks it. That is demo code: the library matches as the specification says.
+Exception? Remember(SignalEvent evt)
+{
+    var ended = new List<string>();
+    lock (sessionsGate)
+    {
+        events.Add((evt.Type, evt.Jti));
+        if (evt.Type == Events.Event["session_revoked"] && evt.Sessions.Count == 0)
+        {
+            ended.AddRange(sessions.Keys);
+            sessions.Clear();
+        }
+    }
+    foreach (var id in ended) receiver?.Untrack(id);
+    if (ended.Count > 0) Console.WriteLine("ssf: session-revoked matched no session; ended the demo's " + ended.Count + " local session(s)");
+    return null;
+}
+
+// GET /live-status: signedIn, subject, receiver, and the accepted events (type, jti).
+// It never includes tokens or assertions.
+void LiveStatus(HttpListenerContext ctx)
+{
+    var current = CurrentSession(ctx.Request);
+    List<Dictionary<string, object?>> seen;
+    lock (sessionsGate)
+        seen = events.Select(item => new Dictionary<string, object?> { ["type"] = item.Type, ["jti"] = item.Jti }).ToList();
+    var body = JsonMaps.Stringify(new Dictionary<string, object?>
+    {
+        ["signedIn"] = current != null,
+        ["subject"] = current?.Login.NameId,
+        ["receiver"] = receiverState,
+        ["events"] = seen,
+    });
+    ctx.Response.AppendHeader("cache-control", "no-store");
+    WriteBytes(ctx, 200, body, "application/json");
+}
+
 void Route(HttpListenerContext ctx)
 {
     var path = ctx.Request.Url?.AbsolutePath ?? "/";
     if (path == "/healthz")
     {
         WriteBytes(ctx, 200, "ok", "text/plain");
+        return;
+    }
+    if (path == "/live-status" && ctx.Request.HttpMethod == "GET")
+    {
+        LiveStatus(ctx);
         return;
     }
     switch (path)
