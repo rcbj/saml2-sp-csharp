@@ -18,7 +18,7 @@ docker build --target test .
 
 The `test` stage runs `dotnet test --nologo` in `mcr.microsoft.com/dotnet/sdk:8.0`. GitHub Actions uses that command. Do not run the .NET SDK on the host. The demo image does not run the suite.
 
-Signatures and decryption are real. The stub identity provider signs with this package's exclusive canonicalization and is created inside the tests. No live iya-sts.
+Signatures and decryption are real. The stub identity provider signs with this package's exclusive canonicalization and is created inside the tests. No live iya-sts. `TlsTrustTests` runs a leaf-only HTTPS listener: `idpCa` is read whole (`HttpSend.TrustStore`; `CreateFromPem` read only the leaf), and `HttpSend.Accept` refuses a certificate that chains to it but names another host (the custom callback replaces the platform's name check; an IP literal needs an IP SAN).
 
 ## Layout
 
