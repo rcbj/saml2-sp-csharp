@@ -24,7 +24,7 @@ RUN dotnet publish cli/IyaSec.Saml2Sp.Cli.csproj -c Release -o /opt/cli --nologo
 
 # python3 and openssl run scripts/configure_iya_sts.py (the install script) in this image,
 # next to the saml2-sp command it calls: the .NET SDK never runs on the host.
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:10.0
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 RUN apt-get update && apt-get install -y --no-install-recommends python3 openssl \
  && rm -rf /var/lib/apt/lists/*
