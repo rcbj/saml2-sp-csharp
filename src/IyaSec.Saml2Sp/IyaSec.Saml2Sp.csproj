@@ -7,7 +7,7 @@
     <RootNamespace>IyaSec.Saml</RootNamespace>
     <AssemblyName>IyaSec.Saml2Sp</AssemblyName>
     <PackageId>IyaSec.Saml2Sp</PackageId>
-    <Version>0.1.3</Version>
+    <Version>0.1.4</Version>
     <Description>SAML 2.0 service provider</Description>
     <Authors>Iya CyberSecurity Solutions, LLC</Authors>
     <IsPackable>true</IsPackable>
