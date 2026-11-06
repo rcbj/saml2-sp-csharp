@@ -59,7 +59,7 @@ public static class Keys
         request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(oids, false));
         request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
         var made = request.CreateSelfSigned(notBefore, notBefore.AddDays(days));
-        var cert = new X509Certificate2(made.Export(X509ContentType.Cert));
+        var cert = X509CertificateLoader.LoadCertificate(made.Export(X509ContentType.Cert));
         made.Dispose();
         return new KeyPair(key.ExportPkcs8PrivateKeyPem(), cert.ExportCertificatePem(), cert, key);
     }
