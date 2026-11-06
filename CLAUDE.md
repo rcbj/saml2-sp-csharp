@@ -16,7 +16,7 @@ Request bindings are `redirect` and `post`. Response bindings are `post`, `redir
 docker build --target test .
 ```
 
-The `test` stage runs `dotnet test --nologo` in `mcr.microsoft.com/dotnet/sdk:8.0` (with `python3` and `openssl` for the script tests). GitHub Actions uses that command. Do not run the .NET SDK on the host. The demo image does not run the suite.
+The `test` stage runs `dotnet test --nologo` in `mcr.microsoft.com/dotnet/sdk:10.0` (with `python3` and `openssl` for the script tests). GitHub Actions uses that command. Do not run the .NET SDK on the host. The demo image does not run the suite.
 
 Signatures and decryption are real. The stub identity provider signs with this package's exclusive canonicalization and is created inside the tests. No live iya-sts. `TlsTrustTests` runs a leaf-only HTTPS listener: `idpCa` is read whole (`HttpSend.TrustStore`; `CreateFromPem` read only the leaf), and `HttpSend.Accept` refuses a certificate that chains to it but names another host (the custom callback replaces the platform's name check; an IP literal needs an IP SAN). `Accept` builds from the presented LEAF through the file's certificates only, so a forged leaf followed by the real CA certificates is refused (tested). The same class runs the install script's `save_idp_ca` against that listener (all four certificates land where `idpCa` points and `ServiceProvider.Create` fetches metadata through the file) and `generated_file` with `write_private` (the path computed apart from the password, the file mode 0600, nothing printed).
 
@@ -38,7 +38,7 @@ Signatures and decryption are real. The stub identity provider signs with this p
 
 ## Layout
 
-Package `IyaSec.Saml2Sp` in `src/IyaSec.Saml2Sp`, namespace `IyaSec.Saml`. `cli`, `demo`, `tests`, `scripts/configure_iya_sts.py` (install script), `scripts/trust_chain.py`, `scripts/live_iya_sts.py`, `Dockerfile` (SDK build stage, `dotnet/aspnet:8.0` demo image (the library references ASP.NET Core) with `python3` and `openssl` for the install script), `docker-compose.yml`. The image name is `saml2-sp-csharp-demo`. Compose uses `network_mode: host`, service `saml-demo`, and `ENV PORT=3000` in the image. The health check is `http://127.0.0.1:${PORT}/healthz`.
+Package `IyaSec.Saml2Sp` in `src/IyaSec.Saml2Sp`, namespace `IyaSec.Saml`. `cli`, `demo`, `tests`, `scripts/configure_iya_sts.py` (install script), `scripts/trust_chain.py`, `scripts/live_iya_sts.py`, `Dockerfile` (SDK build stage, `dotnet/aspnet:10.0` demo image (the library references ASP.NET Core) with `python3` and `openssl` for the install script), `docker-compose.yml`. The image name is `saml2-sp-csharp-demo`. Compose uses `network_mode: host`, service `saml-demo`, and `ENV PORT=3000` in the image. The health check is `http://127.0.0.1:${PORT}/healthz`.
 
 ## Demo
 
