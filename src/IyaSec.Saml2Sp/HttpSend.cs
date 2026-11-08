@@ -65,7 +65,7 @@ static class HttpSend
             try
             {
                 using var leaf = X509Certificate2.CreateFromPem(tls.Cert, tls.Key);
-                handler.ClientCertificates.Add(new X509Certificate2(leaf.Export(X509ContentType.Pfx)));
+                handler.ClientCertificates.Add(X509CertificateLoader.LoadPkcs12(leaf.Export(X509ContentType.Pfx), null));
             }
             catch (Exception ex)
             {
